@@ -142,6 +142,13 @@ html, body {
   color: #fff;
 }
 
+.btn.btn-no {
+  border-color: var(--no);
+  background: transparent;
+  color: var(--no);
+}
+.btn.btn-no:hover:not(:disabled) { background: var(--no); color: #fff; }
+
 .pass-note { font-size: 0.75rem; color: var(--muted); margin-top: 0.75rem; }
 
 /* ── RESULT FLASH ── */
@@ -205,6 +212,20 @@ html, body {
 
 footer { font-size: 0.75rem; color: var(--muted); margin-top: 1.5rem; }
 
+/* ── TIMER BAR ── */
+.timer-bar-wrap {
+  position: fixed; top: 49px; left: 0; right: 0; height: 3px;
+  background: var(--border); z-index: 9;
+}
+.timer-bar {
+  height: 100%; background: var(--text);
+  transition: width 1s linear, background 0.3s;
+  width: 100%;
+}
+.timer-bar.warn { background: #e67e22; }
+.timer-bar.danger { background: var(--loss); }
+#timer-label { font-family: monospace; font-size: 0.8rem; }
+
 /* ── POINTS ANIMATION ── */
 @keyframes bumpUp { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
 @keyframes bumpDn { 0%,100%{transform:scale(1)} 50%{transform:scale(0.9)} }
@@ -217,7 +238,7 @@ footer { font-size: 0.75rem; color: var(--muted); margin-top: 1.5rem; }
 <!-- START -->
 <div class="screen active" id="screen-start">
   <h1>The <em>소수 경매</em><br>게임</h1>
-  <p>소수라고 확신하면 베팅하고 선언하라.<br>틀리면 베팅액 전부 잃는다.<br>확신 없으면 −50pt 패스.</p>
+  <p>소수 또는 합성수, 둘 다 베팅 가능.<br><br>패스 −100pt · 시간초과 −100pt.<br>5자리 수까지 등장.</p>
   <div class="controls">
     <button class="btn" onclick="startGame()">Start</button>
   </div>
@@ -225,6 +246,7 @@ footer { font-size: 0.75rem; color: var(--muted); margin-top: 1.5rem; }
 
 <!-- PLAY -->
 <div class="screen" id="screen-play">
+  <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar"></div></div>
   <div class="status-bar">
     <div><span class="label">Points </span><span class="val" id="pts">1000</span></div>
     <div><span class="label">Round </span><span class="val" id="rnd">1/15</span></div>
@@ -245,10 +267,13 @@ footer { font-size: 0.75rem; color: var(--muted); margin-top: 1.5rem; }
     <div class="bet-amount-display" id="bet-display">베팅 금액을 선택하세요</div>
 
     <div class="controls">
-      <button class="btn" id="btn-yes" onclick="declare()" disabled>Yes, prime</button>
-      <button class="btn outline" id="btn-pass" onclick="doPass()">Pass −50</button>
+      <button class="btn" id="btn-yes" onclick="declare('prime')" disabled>Yes, prime</button>
+      <button class="btn btn-no" id="btn-no" onclick="declare('composite')" disabled>No, composite</button>
     </div>
-    <div class="pass-note">×<span id="mult-label">2.0</span> 배율 적용</div>
+    <div class="controls" style="margin-top:10px;">
+      <button class="btn outline" id="btn-pass" onclick="doPass()">Pass −100</button>
+    </div>
+    <div class="pass-note">소수 ×<span id="mult-label">2.0</span> &nbsp;·&nbsp; 합성수 ×1.5 &nbsp;·&nbsp; <span id="timer-label">⏱ <span id="timer-sec">15</span>s</span></div>
   </div>
 </div>
 
@@ -287,22 +312,104 @@ function factorize(n) {
   return Object.entries(m).map(([b,e]) => e>1?`${b}^${e}`:b).join('×');
 }
 
-// ── Number pool ──
+// ── Number pool (much harder) ──
+// Tricky composites: look prime but aren't (Carmichael-adjacent, near-primes, squares of primes)
+// Real primes mixed in with imposters at similar magnitude
 function makePool() {
-  const easy = shuffle([17,23,35,41,49,53,51,67,77,89,91,97,87,33,71]).slice(0,5);
-  const mid  = shuffle([101,111,127,133,143,149,151,161,169,173,181,187,197,199,211]).slice(0,5);
-  const hard = shuffle([221,239,247,251,253,257,263,289,293,299,311,319,323,331,337,341,349]).slice(0,5);
-  return [...easy, ...mid, ...hard];
+  const tier1 = shuffle([
+    // easy warm-up: 2-digit, mix
+    53, 57, 61, 77, 83, 87, 91, 97
+  ]).slice(0, 3);
+
+  const tier2 = shuffle([
+    // 3-digit: tricky composites mixed with primes
+    // composites that look prime: 221(13×17), 247(13×19), 253(11×23), 289(17²), 299(13×23), 323(17×19), 341(11×31), 361(19²)
+    // real primes: 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283
+    221, 223, 247, 251, 253, 257, 263, 289, 293, 299, 311, 319, 323, 331, 337, 341, 347, 349, 353, 359, 361
+  ]).slice(0, 5);
+
+  const tier3 = shuffle([
+    // 4-digit: real pain
+    // composites: 1001(7×11×13), 1003(17×59), 1007(19×53), 1189(29×41), 1271(31×41), 1333(31×43), 1517(37×41), 1681(41²), 1763(41×43)
+    // primes: 1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049, 1051, 1061, 1063, 1069
+    1001, 1003, 1007, 1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049, 1051, 1063, 1189, 1231, 1271, 1279, 1283, 1289, 1297, 1301, 1303, 1333, 1361, 1367, 1373, 1381, 1399, 1409, 1423, 1517, 1523, 1531, 1543, 1549, 1553, 1559, 1567, 1571, 1579, 1583, 1597, 1601, 1607, 1609, 1613, 1619, 1621, 1627, 1637, 1657, 1663, 1667, 1669, 1681, 1693, 1697, 1699, 1709, 1721, 1723, 1733, 1741, 1747, 1753, 1759, 1763, 1777, 1783, 1787, 1789
+  ]).slice(0, 5);
+
+  const tier4 = shuffle([
+    // 5-digit nightmare
+    // composites: 10001(73×137), 10003(13×769), 10007(prime!), 10009(prime!), 10021(prime!), 10037(prime!)
+    // very tricky: 11111(41×271), 12121(prime!), 13331(prime!no=... check), large near-primes
+    // Let's carefully pick verified:
+    // composites: 10001(73×137), 10003(13×769), 10027(composite? 10027=prime!), 
+    // Verified composites: 10001,10003,10143(3×3381),10201(101²),10403(101×103),11011(7×11×11×13),11111(41×271),12321(111²),14641(11^4)
+    // Verified primes: 10007,10009,10037,10039,10061,10067,10069,10079,10091,10093,10099,10103,10111,10133,10139
+    10001, 10003, 10007, 10009, 10037, 10039, 10061, 10067, 10079, 10091, 10099, 10103, 10111, 10133, 10139, 10141, 10151, 10159, 10163, 10169, 10177, 10181, 10193, 10201, 10211, 10223, 10243, 10247, 10253, 10259, 10267, 10271, 10273, 10289, 10301, 10303, 10313, 10321, 10331, 10333, 10337, 10343, 10357, 10369, 10391, 10399, 10403
+  ]).slice(0, 7);
+
+  return [...tier1, ...tier2, ...tier3, ...tier4];
 }
+
 function shuffle(a) {
   const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} return b;
+}
+
+// ── Timer ──
+let timerInterval = null;
+const TIMER_SECS = { 1:15, 2:13, 3:11, 4:9 }; // tier by digit count
+
+function timerSecs(n) {
+  const d = String(n).length;
+  if (d <= 2) return 15;
+  if (d === 3) return 12;
+  if (d === 4) return 9;
+  return 7; // 5-digit: brutal
+}
+
+function startTimer(secs) {
+  clearInterval(timerInterval);
+  let remaining = secs;
+  const bar = document.getElementById('timer-bar');
+  const sec = document.getElementById('timer-sec');
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  bar.className = 'timer-bar';
+  void bar.offsetWidth;
+  bar.style.transition = `width ${secs}s linear`;
+  bar.style.width = '0%';
+
+  sec.textContent = remaining;
+  timerInterval = setInterval(() => {
+    remaining--;
+    sec.textContent = Math.max(0, remaining);
+    const pct = remaining / secs;
+    if (pct <= 0.25) bar.className = 'timer-bar danger';
+    else if (pct <= 0.5) bar.className = 'timer-bar warn';
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      timeOut();
+    }
+  }, 1000);
+}
+
+function stopTimer() { clearInterval(timerInterval); }
+
+function timeOut() {
+  const prime = isPrime(G.cur);
+  const pen = Math.min(100, G.pts);
+  const prevPts = G.pts;
+  G.pts = Math.max(0, G.pts - pen);
+  G.history.push({ n: G.cur, prime, bet: 0, delta: -pen, action: 'timeout' });
+  flash('no', `시간초과 −${pen} pt`, 'neg');
+  document.getElementById('sub').textContent = prime ? '→ 소수였습니다!' : `→ 합성수 (${factorize(G.cur)})`;
+  animatePts(prevPts, G.pts);
+  setTimeout(() => { if (G.pts === 0) endGame(true); else nextRound(); }, 1000);
 }
 
 // ── State ──
 let G = {};
 
 function startGame() {
-  G = { pts: 1000, round: 0, total: 15, pool: makePool(), bet: 0, history: [] };
+  G = { pts: 1000, round: 0, total: 20, pool: makePool(), bet: 0, history: [] };
   show('play');
   nextRound();
 }
@@ -315,24 +422,33 @@ function nextRound() {
 
   document.getElementById('big-n').textContent = G.cur;
   document.getElementById('big-n').className = 'big-n';
-  document.getElementById('pts').textContent = G.pts;
+  document.getElementById('pts').textContent = G.pts.toLocaleString();
   document.getElementById('rnd').textContent = `${G.round}/${G.total}`;
   document.getElementById('sub').textContent = digitHint(G.cur);
   document.getElementById('mult-label').textContent = mult().toFixed(1);
   document.getElementById('bet-display').textContent = '베팅 금액을 선택하세요';
   document.getElementById('btn-yes').disabled = true;
+  document.getElementById('btn-no').disabled = true;
+  document.getElementById('btn-pass').disabled = false;
   document.querySelectorAll('.bet-pill').forEach(b => b.classList.remove('active'));
+
+  startTimer(timerSecs(G.cur));
 }
 
 function digitHint(n) {
   const d = String(n).length;
-  return d <= 2 ? '2자리 수' : d === 3 ? '3자리 수' : '4자리 수';
+  if (d <= 2) return `${d}자리`;
+  if (d === 3) return `${d}자리`;
+  if (d === 4) return `${d}자리 — 신중히`;
+  return `${d}자리 — 극한`;
 }
+
 function mult() {
-  const n = G.cur;
-  if (n > 300) return 3.0;
-  if (n > 150) return 2.5;
-  return 2.0;
+  const d = String(G.cur).length;
+  if (d >= 5) return 4.0;
+  if (d === 4) return 3.0;
+  if (d === 3) return 2.0;
+  return 1.5;
 }
 
 function setPct(pct) {
@@ -342,35 +458,44 @@ function setPct(pct) {
   G.bet = Math.max(1, Math.floor(G.pts * pct / 100));
   document.getElementById('bet-display').innerHTML = `베팅 <span>${G.bet.toLocaleString()} pt</span>`;
   document.getElementById('btn-yes').disabled = false;
+  document.getElementById('btn-no').disabled = false;
 }
 
-function declare() {
+function declare(guess) {
+  stopTimer();
   const prime = isPrime(G.cur);
+  const correct = (guess === 'prime') === prime;
+  const prevPts = G.pts;
   let delta;
-  if (prime) {
-    delta = Math.floor(G.bet * mult());
+
+  if (correct) {
+    const m = guess === 'prime' ? mult() : 1.5;
+    delta = Math.floor(G.bet * m);
     G.pts += delta;
     flash('yes', `+${delta} pt`, 'pos');
+    if (!prime) document.getElementById('sub').textContent = `= ${factorize(G.cur)}`;
   } else {
     delta = -G.bet;
     G.pts = Math.max(0, G.pts + delta);
     flash('no', `${delta} pt`, 'neg');
-    // show factorization briefly
-    document.getElementById('sub').textContent = `= ${factorize(G.cur)}`;
+    document.getElementById('sub').textContent = prime ? '소수였습니다!' : `= ${factorize(G.cur)}`;
   }
-  G.history.push({ n: G.cur, prime, bet: G.bet, delta, action: 'declare' });
-  animatePts(delta > 0);
-  setTimeout(() => { if (G.pts === 0) endGame(true); else nextRound(); }, 900);
+
+  G.history.push({ n: G.cur, prime, guess, bet: G.bet, delta, action: 'declare' });
+  animatePts(prevPts, G.pts);
+  setTimeout(() => { if (G.pts === 0) endGame(true); else nextRound(); }, 1100);
 }
 
 function doPass() {
+  stopTimer();
   const prime = isPrime(G.cur);
-  const pen = Math.min(50, G.pts);
+  const pen = Math.min(100, G.pts);
+  const prevPts = G.pts;
   G.pts = Math.max(0, G.pts - pen);
   G.history.push({ n: G.cur, prime, bet: 0, delta: -pen, action: 'pass' });
   flash('no', `패스 −${pen} pt`, 'skip');
-  document.getElementById('sub').textContent = prime ? '→ 소수였습니다' : `→ 합성수 (${factorize(G.cur)})`;
-  animatePts(false);
+  document.getElementById('sub').textContent = prime ? '→ 소수였습니다!' : `→ 합성수 (${factorize(G.cur)})`;
+  animatePts(prevPts, G.pts);
   setTimeout(() => { if (G.pts === 0) endGame(true); else nextRound(); }, 900);
 }
 
@@ -379,29 +504,40 @@ function flash(dir, msg, cls) {
   n.classList.add(dir === 'yes' ? 'flash-yes' : 'flash-no');
   showToast(msg, cls);
   document.getElementById('btn-yes').disabled = true;
+  document.getElementById('btn-no').disabled = true;
   document.getElementById('btn-pass').disabled = true;
-  setTimeout(() => {
-    n.classList.remove('flash-yes', 'flash-no');
-    document.getElementById('btn-pass').disabled = false;
-  }, 850);
+  setTimeout(() => { n.classList.remove('flash-yes', 'flash-no'); }, 850);
 }
 
 function showToast(msg, cls) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `result-toast show ${cls}`;
-  setTimeout(() => t.classList.remove('show'), 800);
+  setTimeout(() => t.classList.remove('show'), 900);
 }
 
-function animatePts(up) {
+// ── Animated score counter ──
+let countAnim = null;
+function animatePts(from, to) {
+  if (countAnim) cancelAnimationFrame(countAnim);
   const el = document.getElementById('pts');
-  el.textContent = G.pts;
-  el.classList.remove('bump-up','bump-dn');
-  void el.offsetWidth;
-  el.classList.add(up ? 'bump-up' : 'bump-dn');
+  const duration = 800;
+  const start = performance.now();
+  const diff = to - from;
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    // ease out cubic
+    const ease = 1 - Math.pow(1 - t, 3);
+    const cur = Math.round(from + diff * ease);
+    el.textContent = cur.toLocaleString();
+    if (t < 1) { countAnim = requestAnimationFrame(step); }
+    else { el.textContent = to.toLocaleString(); countAnim = null; }
+  }
+  countAnim = requestAnimationFrame(step);
 }
 
 function endGame(bankrupt) {
+  stopTimer();
   show('end');
   document.getElementById('end-pts').textContent = G.pts.toLocaleString();
 
@@ -409,28 +545,34 @@ function endGame(bankrupt) {
   if (bankrupt || G.pts === 0) {
     badge = '파산'; sub = '소수의 신이 외면했습니다.';
     document.getElementById('end-pts').style.color = '#c0392b';
-  } else if (G.pts >= 3000) {
+  } else if (G.pts >= 5000) {
     badge = '대사제'; sub = '완벽한 판결. 소수의 신이 당신을 인정했습니다.';
-    document.getElementById('end-pts').style.color = '#1a1a1a';
-  } else if (G.pts >= 1500) {
+  } else if (G.pts >= 2500) {
     badge = '성직자'; sub = '소수를 향한 믿음이 흔들리지 않았습니다.';
-    document.getElementById('end-pts').style.color = '#1a1a1a';
-  } else {
+  } else if (G.pts >= 1000) {
     badge = '수련 신도'; sub = '소수의 진리를 더 탐구해야 합니다.';
     document.getElementById('end-pts').style.color = '#888';
+  } else {
+    badge = '이단 심문 대상'; sub = '소수를 믿는다 하나 실상은 달랐습니다.';
+    document.getElementById('end-pts').style.color = '#c0392b';
   }
   document.getElementById('end-badge').textContent = badge;
   document.getElementById('end-sub').textContent = sub;
 
-  // History
   const wrap = document.getElementById('end-history');
   wrap.innerHTML = '';
   G.history.forEach(h => {
     const row = document.createElement('div');
     row.className = 'history-row';
-    const cls = h.action === 'pass' ? 'skip' : h.delta > 0 ? 'pos' : 'neg';
-    const deltaStr = h.action === 'pass' ? `−50` : h.delta > 0 ? `+${h.delta}` : `${h.delta}`;
-    row.innerHTML = `<span class="h-num">${h.n}</span><span class="h-type">${h.prime?'prime':'composite'}</span><span class="h-delta ${cls}">${deltaStr}</span>`;
+    const isSkip = h.action === 'pass' || h.action === 'timeout';
+    const cls = isSkip ? 'skip' : h.delta > 0 ? 'pos' : 'neg';
+    let tag;
+    if (h.action === 'timeout') tag = '⏱';
+    else if (h.action === 'pass') tag = 'pass';
+    else tag = h.prime ? 'prime' : 'composite';
+    const guessTag = h.action === 'declare' ? ` (${h.guess === 'prime' ? 'P' : 'C'})` : '';
+    const deltaStr = isSkip ? `−${Math.abs(h.delta)}` : h.delta > 0 ? `+${h.delta}` : `${h.delta}`;
+    row.innerHTML = `<span class="h-num">${h.n}</span><span class="h-type">${tag}${guessTag}</span><span class="h-delta ${cls}">${deltaStr}</span>`;
     wrap.appendChild(row);
   });
 }
